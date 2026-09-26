@@ -805,3 +805,36 @@ describe("OpenVikingClient canonical namespace policy", () => {
     expect(body).not.toHaveProperty("role_id");
   });
 });
+
+
+describe("OpenVikingClient session reset", () => {
+  it("requests an empty archive boundary on the same session", async () => {
+    const transport = vi.fn().mockResolvedValue(okResponse({
+      session_id: "same-session", status: "skipped", reset_context: true,
+    }));
+    const client = new OpenVikingClient("http://127.0.0.1:1933", "", "agent", 5000, "", "", undefined, false, true, { transport });
+    await client.commitSession("same-session", { keepRecentCount: 0, resetContext: true });
+    const [url, init] = transport.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/sessions/same-session/commit");
+    expect(JSON.parse(String(init.body))).toEqual({ reset_context: true });
+  });
+});
+
+
+it("does not report reset success when an older server ignores reset_context", async () => {
+  const transport = vi.fn().mockResolvedValue(okResponse({ session_id: "s", status: "skipped" }));
+  const client = new OpenVikingClient("http://127.0.0.1:1933", "", "agent", 5000, "", "", undefined, false, true, { transport });
+  await expect(client.commitSession("s", { resetContext: true })).rejects.toThrow("did not confirm reset_context");
+});
+
+describe("cloud recall compression", () => {
+  it.each([['server', true], ['auto', 'auto'], ['off', undefined]] as const)(
+    "forwards %s and preserves server digest", async (mode, rewrite) => {
+      const transport = vi.fn().mockResolvedValue(okResponse({ entries: [], rendered: 'raw', digest: 'compressed', stats: {} }));
+      const client = new OpenVikingClient('http://127.0.0.1:1933', '', 'agent', 5000, '', '', undefined, false, true, { transport });
+      const result = await client.searchContext('deployment preferences', { recallCompress: mode });
+      expect(JSON.parse(String(transport.mock.calls[0][1].body)).rewrite).toBe(rewrite);
+      expect(result.digest).toBe('compressed');
+    },
+  );
+});

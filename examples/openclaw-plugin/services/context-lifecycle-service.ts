@@ -140,6 +140,7 @@ export type AfterTurnOpenVikingSessionParams = {
     autoCapture: boolean;
     commitTokenThresholdRatio: number;
     commitKeepRecentCount: number;
+    commitRetentionMode?: "message_count" | "turn_budget";
     logFindRequests: boolean;
     peer_role?: OpenVikingPeerRole;
   };
@@ -370,6 +371,7 @@ export async function commitOpenVikingSession({
     const commitResult = await client.commitSession(ovId, {
       wait: true,
       keepRecentCount: 0,
+      resetContext: true,
     });
     const memCount = totalExtractedMemories(commitResult.memories_extracted);
     if (commitResult.status === "failed") {
@@ -438,6 +440,7 @@ async function recallForAssemble(
     peerRole: cfg.peer_role ?? "none",
     senderPeerId: sanitizeOpenVikingPeerId(sender.senderId),
     assistantPeerId: agentId,
+    warn: (message) => logger.warn?.(message),
   });
   const queryConfig = await queryConfigStore?.getEffective({
     agentId,
@@ -986,7 +989,9 @@ export async function afterTurnOpenVikingSession({
 
     const commitResult = await client.commitSession(ovSessionId, {
       wait: false,
-      keepRecentCount: cfg.commitKeepRecentCount,
+      ...(cfg.commitRetentionMode === "turn_budget"
+        ? { retentionMode: "turn_budget" as const }
+        : { keepRecentCount: cfg.commitKeepRecentCount }),
     });
     logger.info(
       `openviking: committed session=${ovSessionId}, ` +
